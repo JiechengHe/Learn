@@ -200,6 +200,9 @@ public class DiscoveryClient implements EurekaClient {
         });
     }
 
+    /*
+        DiscoveryClient实例化过程
+    */
     @Inject
     DiscoveryClient(ApplicationInfoManager applicationInfoManager, EurekaClientConfig config, AbstractDiscoveryClientOptionalArgs args, Provider<BackupRegistry> backupRegistryProvider) {
         this.RECONCILE_HASH_CODES_MISMATCH = Monitors.newCounter("DiscoveryClient_ReconcileHashCodeMismatch");
@@ -269,9 +272,11 @@ public class DiscoveryClient implements EurekaClient {
             logger.info("Discovery Client initialized at timestamp {} with initial instances count: {}", Long.valueOf(this.initTimestampMs), Integer.valueOf(this.getApplications().size()));
         } else {
             try {
+                // 定时任务线程池
                 this.scheduler = Executors.newScheduledThreadPool(2, (new ThreadFactoryBuilder()).setNameFormat("DiscoveryClient-%d").setDaemon(true).build());
-                // 发送心跳包的线程池
+                // 发送心跳包的线程池(服务续约)
                 this.heartbeatExecutor = new ThreadPoolExecutor(1, this.clientConfig.getHeartbeatExecutorThreadPoolSize(), 0L, TimeUnit.SECONDS, new SynchronousQueue(), (new ThreadFactoryBuilder()).setNameFormat("DiscoveryClient-HeartbeatExecutor-%d").setDaemon(true).build());
+                // 缓存刷新线程池(服务拉取)
                 this.cacheRefreshExecutor = new ThreadPoolExecutor(1, this.clientConfig.getCacheRefreshExecutorThreadPoolSize(), 0L, TimeUnit.SECONDS, new SynchronousQueue(), (new ThreadFactoryBuilder()).setNameFormat("DiscoveryClient-CacheRefreshExecutor-%d").setDaemon(true).build());
                 // 与server进行http交互的工具
                 this.eurekaTransport = new DiscoveryClient.EurekaTransport(null);
@@ -311,6 +316,8 @@ public class DiscoveryClient implements EurekaClient {
                 }
             }
 
+
+            // 初始化定时任务
             this.initScheduledTasks();
 
             try {
@@ -914,12 +921,22 @@ public class DiscoveryClient implements EurekaClient {
     private void initScheduledTasks() {
         int renewalIntervalInSecs;
         int expBackOffBound;
+
+        // 是否从EurekaServer中拉取注册表
         if(this.clientConfig.shouldFetchRegistry()) {
+            // 子任务(从Server中拉取服务列表)，执行超时时间
             renewalIntervalInSecs = this.clientConfig.getRegistryFetchIntervalSeconds();
+            // 子任务执行最大频率
             expBackOffBound = this.clientConfig.getCacheRefreshExecutorExponentialBackOffBound();
+            /*
+                TimedSupervisorTask:是一个定时监督任务，用于监管任务执行
+                任务在延迟renewalIntervalInSecs秒后执行
+                具体任务是：new DiscoveryClient.CacheRefreshThread()
+            */
             this.scheduler.schedule(new TimedSupervisorTask("cacheRefresh", this.scheduler, this.cacheRefreshExecutor, renewalIntervalInSecs, TimeUnit.SECONDS, expBackOffBound, new DiscoveryClient.CacheRefreshThread()), (long)renewalIntervalInSecs, TimeUnit.SECONDS);
         }
 
+        // 是否将自己注册到EurekaServer中
         if(this.clientConfig.shouldRegisterWithEureka()) {
             renewalIntervalInSecs = this.instanceInfo.getLeaseInfo().getRenewalIntervalInSecs();
             expBackOffBound = this.clientConfig.getHeartbeatExecutorExponentialBackOffBound();
@@ -1033,19 +1050,27 @@ public class DiscoveryClient implements EurekaClient {
         return this.healthCheckHandler;
     }
 
+    // 这个注解用于在进行单元测试时能直接调用私有方法
     @VisibleForTesting
+    // 刷新服务注册表
     void refreshRegistry() {
         try {
             boolean e = this.isFetchingRemoteRegionRegistries();
             boolean remoteRegionsModified = false;
+            // 获取最新的远端region(config是不是可以随时改变的？？？)
             String latestRemoteRegions = this.clientConfig.fetchRegistryForRemoteRegions();
             if(null != latestRemoteRegions) {
+                // 获取上一次更新成功的region
                 String success = (String)this.remoteRegionsToFetch.get();
+                // 和上一次的region不同
                 if(!latestRemoteRegions.equals(success)) {
+                    // 将regionMapper上锁
                     synchronized(this.instanceRegionChecker.getAzToRegionMapper()) {
+                        // 更新region
                         if(this.remoteRegionsToFetch.compareAndSet(success, latestRemoteRegions)) {
                             String[] remoteRegions = latestRemoteRegions.split(",");
                             this.remoteRegionsRef.set(remoteRegions);
+                            // 如果是新的region用setRegionsToFetch进行更新
                             this.instanceRegionChecker.getAzToRegionMapper().setRegionsToFetch(remoteRegions);
                             remoteRegionsModified = true;
                         } else {
@@ -1053,6 +1078,7 @@ public class DiscoveryClient implements EurekaClient {
                         }
                     }
                 } else {
+                    // 和上一次的region相同，用refreshMapping进行更新，内部使用setRegionsToFetch
                     this.instanceRegionChecker.getAzToRegionMapper().refreshMapping();
                 }
             }
@@ -1060,6 +1086,7 @@ public class DiscoveryClient implements EurekaClient {
             boolean success1 = this.fetchRegistry(remoteRegionsModified);
             if(success1) {
                 this.registrySize = ((Applications)this.localRegionApps.get()).size();
+                // 最新一次注册表抓取时间
                 this.lastSuccessfulRegistryFetchTimestamp = System.currentTimeMillis();
             }
 
@@ -1249,6 +1276,7 @@ public class DiscoveryClient implements EurekaClient {
         }
 
         public void run() {
+            // 这里为什么不用this.refreshRegistry，因为这个操作是在CacheRefreshThread下的，this指代不同。
             DiscoveryClient.this.refreshRegistry();
         }
     }
