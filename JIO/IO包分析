@@ -1,0 +1,62 @@
+异常总结：
+Error -> IOError
+Execption -> IOExecption ->:
+CharConversionException     —— 子串编码异常的父类
+EOFException                —— 在输入流读取时，到达末尾，但在实际运行中并不是将异常向上层抛出，而是返回特殊值
+FileNotFoundException       —— 当文件不存在，或者因为权限限制而无法打开时，抛出此异常
+InterruptedIOException      —— IO操作被中断
+InvalidClassException       —— 序列化异常：类描述符不符；数据类型不符；无无参构造函数
+InvalidObjectException      —— 序列化验证失败
+NotActiveException          —— 序列化和反序列化不活跃
+NotSerializableException    —— 当序列化和反序列时需要接口却没有接口
+ObjectStreamException       —— 对象流异常的超类
+OptionalDataException       —— 异常表示由于未读原始数据导致对象读取操作失败，或者属于流中序列化对象的数据结束
+StreamCorruptedException    —— 从对象流中读取的控制信息违反内部一致性检查时抛出
+SyncFailedException         —— 同步操作失败
+UncheckedIOException        —— 使用未经检查的异常包装{@link IOException}
+UnsupportedEncodingException—— 不支持编码异常
+UTFDataFormatException      —— UTF-8编码异常
+WriteAbortedException       —— 写操作终止
+
+
+主要类分析：
+
+InputStream 实现 Closeable 接口(close方法)：
+abstract:
+	read()                —— 需要子类去实现(不同来源)，返回值是固定的，>=0表示读取到的字节，-1表示结束
+static final:
+	MAX_SKIP_BUFFER_SIZE = 2014      —— 最大缓存大小
+public:
+	read(byte[])          —— 将内容读入到数组中，并返回int值
+	read(byte[],off,len)  —— 通过read函数，逐个字节读入到数组中
+	skip(n)               —— 跳过n个字节
+	available()           —— 返回还有多少个字节没有读取(按照不同的来源，不同的处理方法，重写方法)
+	close()               —— 关闭输入流(按照不同的来源，不同的处理方法，重写方法)
+	*mark(readlimit)      —— 在当前字节处设置一个书签，在读取readlimit字节前调用reset时，回到这个点而不是0
+	*reset()              —— 回到0点或者书签点
+	markSupported()       —— 判断书签是否有效
+InputStream的子类以及读取数据的来源：
+FilterInputStream               —— 输入流的装饰器，他的子类可以对输入流的字节做进一步处理
+ByteArrayInputStream            —— 读取内存字节数组(是同步的)
+FileInputStream                 —— 读取文件中的字节内容(read调用本地方法，实例化一个fileChannel)
+ObjectInputStream               —— 读取对象流，实现了ObjectInput和ObjectStreamConstants接口(反序列化读入)
+PipedInputStream                —— 从管道流中读取内容，可以传入一个管道输出流，用connect函数链接(输出管道中)
+SequenceInputStream             —— 用于读取一连串输入流，可以是不同的输入流，第一个读取完，读取第二个
+
+OutputStream 实现 Closeable(close方法) 和 Flushable(flush方法):
+abstract:
+	write(int b)          —— b表示写入的一个字节
+public:
+	write(byte[] b)       —— 表示写入一组字节
+	write(byte[],off,len) —— 将数组的off开始，len长度的字节写入
+	flush()               —— 将buffer中的字节写入目标源(子类实现)
+	close()               —— 关闭资源(子类实现)
+OutputStream的子类以及写入数据的目标源：
+FilterOutputStream        —— 输出流的装饰器，他的子类能先将内容先转成字节再存入相应的目标源
+ByteArrayOutputStream     —— 将内容写入到内存数组(扩容和HashMap一致)
+FileOutputStream          —— 将内容写入到文件中(可以追加内容)
+ObjectOutputStream        —— 写入对象的序列化内容，实现了ObjectOutput和ObjectStreamConstants接口
+PipedOutputStream         —— 管道输出流，配合管道input，内部管道是同一块内存，flush唤醒所有的等待线程(同步)
+
+FilterInputStream —— 使用装饰模式，在对象中传入一个inputStream实例，在方法中调用实例的方法，但是FilterInputStream的子类可以重写这些方法，以达到相应的目的
+BufferedInputStream —— 

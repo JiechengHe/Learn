@@ -1,0 +1,117 @@
+抽象的队列式的同步器——内容拆分
+
+有一个同步队列，队列中有一个空节点，作为头结点
+同步队列的遍历都是从尾向前，因为head是可能改变的，在遍历的过程中
+
+静态内部类——Node
+静态fianl变量：
+	SHARED——共享模式的节点标记
+	EXCLUSIVE——排他模式的节点标记
+	CANCELLED = 1 —— 线程被取消
+	SIGNAL    =-1 —— 标识后续节点需要唤醒
+	CONDITION =-2 —— 线程正在条件等待
+	PROPAGATE =-3 —— 无条件传播
+成员变量：
+	waitStatus —— 标识节点的状态
+	prev       —— 前置节点指针
+	next       —— 后置节点指针
+	thread     —— 保存的线程
+	nextWaiter —— 未知(条件队列的下一个节点，或者共享模式标识)
+final方法：
+	isShared   —— 节点是否是共享的
+	predecessor—— 获取当前节点的前置节点
+构造方法：
+	空构造方法
+	用于加载到同步队列
+	用于加载到条件队列
+
+公开内部类——ConditionObject
+成员变量：
+	firstWaiter —— 队列头结点
+	lastWaiter  —— 队列尾结点
+静态final变量：
+	REINTERRUPT = 1                —— 重新中断当从wait中退出时
+	THROW_IE    =-1                —— 从wait中退出时抛出InterruptedException异常
+private方法：
+	addConditionWaiter()           —— 将节点放入到Condition队列末尾
+	***signal类方法只是将节点从条件队列中移动到同步队列中，而线程的运行还是阻塞在await方法中
+	doSignal(first)                —— 将一个节点从condition队列移动到同步队列
+	doSignalAll(first)             —— 将first及以后的节点从condition队列移动到同步队列
+	unlinkCancelledWaiters()       —— 将队列中已经不是CONDITION状态的节点移除
+	checkInterruptWhileWaiting(node) —— 判断线程是否中断在等待的过程中，THROW_IE(在signal前中断)，REINTERRUPT(在signal后中断)，0没有发生中断
+	reportInterruptAfterWait(mode) —— mode=1中断，mode=-1抛出异常，其他不做任何事
+public方法：
+	signal()                       —— 从队列中移除一个节点到同步队列中(doSignal)
+	signalAll()                    —— 将队列中所有的节点移动到同步队列中(doSignalAll)
+	awaitUninterruptibly()         —— 将当前线程放入到condition的队列中，并释放掉所持有的锁，并将同步状态记录在savedState变量中，在唤醒后再将状态改回去
+final方法：
+	wait类型方法调用addConditionWaiter和fullyRelease方法
+	await()                        —— 将当前线程阻塞并加入到条件等待队列中，从同步队列中移除，并保存当时的同步队列状态
+	awaitNanos(time)               —— 功能和await类似，只是在时间条件限制下进行阻塞，时间长度
+	awaitUntil(deadline)           —— 功能和await类似，只是在时间条件限制下进行阻塞，终止等待时间
+	await(time,unit)               —— 功能和await类似，只是在时间条件限制下进行阻塞，长度加单位
+	isOwnedBy(AQS)                 —— 判断是否属于当前同步队列
+	hasWaiters()                   —— 判断这个条件下是否有等待线程
+	getWaitQueueLength()           —— 获取等待队列的长度
+	getWaitingThreads()            —— 导出当前队列
+
+AQS：
+静态fianl变量：
+	spinForTimeoutThreshold = 1000   —— 超时时间
+成员变量：
+	head       —— 队列头指针
+	tail       —— 队列尾指针
+	state      —— 队列同步状态
+	各个变量的偏移值   —— 使用Unsafe.getUnsafe().objectFieldOffset(类.class.getDeclaredField(变量名))
+final方法：
+	getState                 —— 获取队列同步状态
+	setState                 —— 设置队列同步状态
+	compareAndSetState       —— CAS修改status值
+	acquireQueued            —— 进行自旋的等待获取锁，获得锁之后，将当前节点设置为头节点，并返回是否被中断过
+	acquire(arg)             —— 排他模式，获取锁，先尝试获取，如果失败则加入到队列中，并阻塞(tryAcquire)
+	acquireInterruptibly(arg)—— 排他模式，如果线程被中断过抛出异常，否则进行竞争锁，若失败则进行可中断排队阻塞
+	tryAcquireNanos(arg,time)—— 排他模式，如果线程被中断过抛出异常，否则进行竞争锁，若失败则进行有限时间的排队阻塞
+	release(arg)             —— 排他模式，释放锁，调用tryRelease释放当前锁，并唤醒下一个等待线程
+	acquireShared(arg)       —— 共享模式，获取锁，先尝试获取锁，若失败，则进入队列等待(tryAcquireShared)
+	acquireSharedInterruptibly(arg) —— 共享模式，如果线程被中断过，抛出异常，竞争锁，如果失败进行可中断排队阻塞
+	tryAcquireSharedNanos(arg,time) —— 共享模式，如果线程被中断过，抛出异常，竞争锁，如果失败进行有限时间排队阻塞
+	releaseShared(arg)       —— 共享模式，释放锁，调用doReleaseShared
+	hasQueuedThreads()       —— 判断同步队列是否有等待的线程
+	hasContended()           —— 判断同步队列是否曾经有等待的线程
+	getFirstQueuedThread     —— 获取第一个等待的线程，调用fullGetFirstQueuedThread
+	isQueued(thread)         —— 判断这个线程是否在队列中
+	apparentlyFirstQueuedIsExclusive —— 验证第一个等待的线程是排他模式的
+	hasQueuedPredecessors()  —— 判断不是当前线程获取到锁
+	getQueueLength()         —— 获取队列长度
+	getQueuedThreads()       —— 将全部线程导出到List
+	getExclusiveQueuedThreads() —— 将排他线程导出到List
+	getSharedQueuedThreads() —— 将共享线程导出到List
+	isOnSyncQueue(node)      —— 判断节点是否在同步队列中，调用findNodeFromTail
+	transferForSignal(node)  —— 将node从condition移入到同步队列中，将状态改为single
+	fullyRelease(node)       —— 将node获得的所有锁均释放
+private方法：
+	enq(Node)                —— 将节点放入到同步队列队尾，如果没有初始化则队列初始化
+	addWaiter(Node)          —— 将节点放入到同步队列队尾，先cas直接修改，如果失败则调用enq
+	setHead(Node)            —— 设置头节点，线程和前置指针为null
+	unparkSuccessor(Node)    —— 唤醒继承节点，当前节点设置为0，如果后继为-1，则找最近的非取消线程，并唤醒
+	doReleaseShared()        —— 共享模式下的释放锁，对head的节点进行释放
+	setHeadAndPropagate(Node,propagate)    —— 当前节点设置为队头，并检查后继节点是否为共享模式(共享模式专用)
+	cancelAcquire(Node)      —— 修改当前节点的等待为取消，并修改前置节点的next指针，但是节点还在队列中
+	shouldParkAfterFailedAcquire —— 在阻塞当前线程前，需要将前置节点设置为single
+	parkAndCheckInterrupt    —— 阻塞当前线程，并返回是否被中断过
+	doAcquireInterruptibly   —— 排他模式的可中断，和acquireQueued功能一致，只是在线程中断时抛出异常
+	doAcquireNanos(arg,time) —— 限定时间的获取锁，如果没获取到返回false，如果在阻塞时被中断抛出异常
+	doAcquireShared(arg)     —— 共享模式下，去获得锁，如果获取失败则自旋和阻塞
+	doAcquireSharedInterruptibly —— 共享模式下，去尝试获得锁，如果获取失败则自旋和阻塞，在阻塞时被中断，则抛出异常
+	doAcquireSharedNanos     —— 共享模式下，在规定时间内获取锁，如果在规定时间内失败则阻塞，如果在阻塞时中断抛异常
+	fullGetFirstQueueThread()—— 获取第一个等待的线程，使用二次检测法，获取第一个等待线程
+	findNodeFromTail(node)   —— 从尾部向前遍历队列，查找node是否在队列中
+	transferAfterCancelledWait(node) —— 将节点取消并转移
+protected方法(子类可以重写):
+	tryAcquire(arg)          —— 排他模式，尝试获取锁，返回是否获取成功
+	tryRelease(arg)          —— 排他模式，尝试释放锁，返回是否释放成功
+	tryAcquireShared(arg)    —— 共享模式，尝试获取锁，返回是否int值
+	tryReleaseShared(arg)    —— 共享模式，尝试释放锁，返回是否释放成功
+	isHeldExclusively()      —— 判断该线程是否是当前排他模式下持有锁的线程
+静态方法：
+	selfInterrupt()          —— 阻塞当前线程

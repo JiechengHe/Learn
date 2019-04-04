@@ -1,0 +1,27 @@
+锁支持类
+
+作用：
+	主要用于创建锁和线程阻塞原语。在调用park和unpark两个方法时，会查看是否获得许可证，如果有直接返回，否则阻塞。park和unpark方法提供了有效的阻塞与唤醒方法。由于许可证的存在，因此不会出现一个线程想要park一个线程想要unpark的出现。此外，如果调用者的线程被中断，那么park函数会返回，并且支持超时返回功能。同时，park也可能会在任何时间无原因的返回，因此，在park返回后必须检查条件。
+	使用样例：LockSupport.park(this);
+
+LockSupport：
+	不能实例化
+静态final变量：
+	parkBlockerOffset                  —— Thread中的变量偏移量，用于保存谁阻塞了线程
+	SEED                               —— Thread中的threadLocalRandomSeed变量的偏移量(没用到)
+	PROBE                              —— Thread中的threadLocalRandomProbe变量的偏移量(没用到)
+	SECONDARY                          —— Thread中的threadLocalRandomSecondarySeed变量的偏移量
+public静态方法：
+	unpark(thread)                     —— 唤醒某个线程，如果线程没有被阻塞没事情发生
+	park(blocker)                      —— 设置谁阻塞的，阻塞线程
+	parkNanos(blocker,nanos)           —— 设置谁阻塞的，阻塞线程，阻塞多少时间
+	parkUntil(blocker,deadline)        —— 设置谁阻塞的，阻塞线程，阻塞到什么时候
+	park()                             —— 阻塞线程
+	park(nanos)                        —— 阻塞线程，阻塞多少时间
+	parkUntil(deadline)                —— 阻塞线程，阻塞到什么时候
+	getBlocker(t)                      —— 获取线程是被谁阻塞的，可以用于监控
+private静态方法：
+	setBlocker(t,arg)                  —— 在阻塞线程时，需要给线程设置是谁阻塞了它
+final方法：
+	nextSecondarySeed()                —— 用于构造随机数
+

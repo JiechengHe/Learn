@@ -1,0 +1,42 @@
+可重入锁排他锁——ReentrantLock 实现了Lock接口
+使用了AQS队列，用state变量表示重入锁的次数，0表示没有线程获取锁
+
+private final 变量：
+	sync          —— AQS队列
+
+内部抽象类 —— Sync 继承了AQS队列
+final方法：
+	nonfairTryAcquire(acquire) —— 非公平的加锁，可以在原有的基础上增加state，在这之前需要判断当前锁的拥有者是否是当前线程
+	tryRelease(release)        —— 释放锁，将状态减去release，在更新state前需要判断当前锁的拥有者(AQS需要子类实现的)
+	isHeldExclusively()        —— 判断当前锁的持有这是否是当前线程(AQS需要子类实现的)
+	newCondition()             —— 创建一个新的条件
+	getOwner()                 —— 获取当前拥有锁的线程
+	getHoldCount()             —— 获取锁获取的次数
+	isLocked()                 —— 锁是否被别的线程获取
+抽象方法：
+	lock()                     —— 获取锁，具体由子类实现(公平与非公平)
+
+静态内部final类 —— NonfairSync(非公平锁)：
+	lock()                     —— 获取锁，先尝试直接修改state的值，如果修改成功则获取锁，否则调用acquire方法
+	tryAcquire(acquire)        —— 直接调用nonfairTryAcquire方法(AQS需要子类实现的)
+
+静态内部fianl类 —— FairSync(公平锁):
+	lock()                     —— 获取锁，直接调用acquire方法
+	tryAcquire(acquire)        —— 和nonfairTryAcquire的区别在于，如果当前锁是没有被获取的需要先调用hasQueuedPredecessors方法(AQS需要子类实现的)
+
+构造方法：
+	ReentrantLock()            —— 默认非公平锁
+	ReentrantLock(fair)        —— True公平锁，False非公平锁
+	lock()                     —— 获取锁，调用相应队列的方法
+	lockInterruptibly()        —— 获取锁，并可以中断调用AQS的acquireInterruptibly方法
+	tryLock()                  —— 尝试获取锁，不管是否获取到，均立马返回。调用nonfairTryAcquire方法
+	tryLock(timeout,unit)      —— 尝试获取锁，在有限时间内获取锁，成功True，失败False
+	unLock()                   —— 释放锁，直接调用tryRelease
+	getHoldCount()             —— 当前线程获取锁的次数
+	isHeldByCurrentThread()    —— 判断是否是当前线程获取的锁
+	isLocked()                 —— 判断当前锁是否被线程获取
+	ifFair()                   —— 判断是公平还是非公平
+	getOwner()                 —— 获取拥有锁的线程
+	hasQueuedThreads()         —— 判断同步队列是否有线程在等待
+	hasQueuedThread(Thread thread)   —— 判断线程是否在同步队列中
+	getQueueLength()           —— 判断同步队列长度
